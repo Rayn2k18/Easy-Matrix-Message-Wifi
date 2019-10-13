@@ -35,7 +35,7 @@ int intensity = 2;
 Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
 
 String tape = "Arduino";
-int wait = 150; // In milliseconds
+int wait = 250; // In milliseconds
 
 int spacer = 1;
 int width = 5 + spacer; // The font width is 5 pixels
@@ -53,12 +53,19 @@ void handle_msg() {
   String msg = server.arg("msg");
   String level = server.arg("level");
   String str_anim = server.arg("stopanim");
+  String spd = server.arg("speed");
   intensity = 2;
   if (level != "") {
     intensity = level.toInt();
   }
   stopanim = 0;
   if (str_anim == "1" or str_anim == "on") stopanim = 1;
+
+  wait = 250;
+  if (spd != "") {
+    wait = spd.toInt();
+  }
+  
   Serial.println(msg);
   decodedMsg = msg;
   // Restore special characters that are misformed to %char by the client browser
