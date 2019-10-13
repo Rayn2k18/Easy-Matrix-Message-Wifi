@@ -9,4 +9,6 @@ Added :
 	-> http://ESP-IP/msg?stopanim=1&msg=message 
 - control of intensity (level ; 8 by default, [0-15])
 	-> http://ESP-IP/msg?level=0&msg=message
+- control of scrolling speed (speed ; 250 by default, [0-x])
+	-> http://ESP-IP/msg?speed=75&msg=message
 	
