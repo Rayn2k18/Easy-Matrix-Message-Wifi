@@ -19,7 +19,7 @@ Added :
 	- showtime : automatic NTP synced display of time with 3 display modes (displaymode=1 2 or 3)
 	   - displaymode : (1-3) 1= 'HH:mm' still mode, 2= 'HH:mm:ss' still mode, 3= 'day, HH:mm' rolling mode
 		-> http://ESP-IP/msg?cmd=showtime&displaymode=2
-	   by default, at startup, ESP wil display its @IP (rolling on led screen) 4 times then will display time in mode 2 (centered HH:mm:ss)
+	   	*by default, at startup, ESP wil display its @IP (rolling on led screen) 4 times then will display time in mode 2 (centered HH:mm:ss)
 	- restart : reboots the ESP (equiv to reset button, usefull when display is not complete or blank after boot up)
 		-> http://ESP-IP/msg?cmd=restart
 	- forcentp : forces ntp client update
