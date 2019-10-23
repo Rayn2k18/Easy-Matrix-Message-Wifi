@@ -25,3 +25,6 @@ Added :
 	- forcentp : forces ntp client update
 		-> http://ESP-IP/msg?cmd=forcentp
 - list of parameters on the ESP html page (http://ESP-IP/)
+- parameter "ntpofset" to change via url gmt offset (usefull for DST), this value is stored to eeprom
+	-> http://ESP-IP/msg?ntpoffset=4 (to set time to GMT+4) 
+	-> http://ESP-IP/msg?ntpoffset=-6 (to set time to GMT-6) 

@@ -13,12 +13,16 @@ GPIO15-D3        -> LOAD
 #include <Max72xxPanel.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <EEPROM.h>
 
 #define SSID "your_ssid"                      // insert your SSID
-#define PASS "********"                    // insert your password
+#define PASS "*********"                    // insert your password
 
 // ------------- NTP DATE / TIME -----------------------
-#define NTP_OFFSET  7200 // In seconds
+
+int gmt_h = 2;  // default value for ntp_offset
+int ntp_offset = gmt_h*3600; // In seconds
+
 #define NTP_INTERVAL 1800000    // In miliseconds
 #define DEBUG_NTPClient ON
 const char* ntpServer = "fr.pool.ntp.org";
@@ -28,7 +32,7 @@ char daysOfTheWeekFR[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"
 
 
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, ntpServer, NTP_OFFSET, NTP_INTERVAL);
+NTPClient timeClient(ntpUDP, ntpServer, ntp_offset, NTP_INTERVAL);
 
 // ******************* String form to sent to the client-browser ************************************
 String form =
@@ -48,6 +52,7 @@ String form =
   "         <ul><li>restart : restarts the ESP (equiv to reset button, usefull when display is not complete or blank after boot up)</li>"
   "         <li>showtime : displays automatically NTP updated time on screen</li>"
   "         <li>forcentp : forces NTP client update</li></ul>"
+  "     <li>ntpoffset : sets ntpoffset (in hour) and store it to eeprom (ex: GMT+2 -> ntpoffset=2 / GMT-10 -> ntpoffset=-10)"
   "  </ul>";
   
 
@@ -75,16 +80,34 @@ int IPRoll = 0;
 int spacer = 1;
 int width = 5 + spacer; // The font width is 5 pixels
 
-/*
-  handles the messages coming from the webbrowser, restores a few special characters and 
-  constructs the strings that can be sent to the oled display
-*/
+void eeWriteInt(int pos, int val) {   // write to eeprom
+    EEPROM.begin(512);
+    byte* p = (byte*) &val;
+    EEPROM.write(pos, *p);
+    EEPROM.write(pos + 1, *(p + 1));
+    EEPROM.write(pos + 2, *(p + 2));
+    EEPROM.write(pos + 3, *(p + 3));
+    EEPROM.commit();
+    EEPROM.end();
+}
 
-void ShowTime(int displayMode)
+int eeGetInt(int pos) {   // read from eeprom
+  int val;
+  byte* p = (byte*) &val;
+  EEPROM.begin(512);
+  *p        = EEPROM.read(pos);
+  *(p + 1)  = EEPROM.read(pos + 1);
+  *(p + 2)  = EEPROM.read(pos + 2);
+  *(p + 3)  = EEPROM.read(pos + 3);
+  EEPROM.end();
+  return val;
+}
+
+void ShowTime(int displayMode)  // displays time
 {
   String Smin;
   showTime = 1; 
-  //timeClient.update();  // update from ntp server OR locally (NTP_OFFSET)
+  //timeClient.update();  // update from ntp server OR locally (ntp_offset)
   int minutes = (int)timeClient.getMinutes();
   if (minutes < 10) {
     Smin = (String) "0"+minutes;
@@ -107,17 +130,15 @@ void ShowTime(int displayMode)
     case 1:   // show "hh:mm", center, still
       decodedMsg = THour;
       stopanim = 1;
-      wait = 500;
       break;
     case 2:   // show "hh:mm:ss", center, still
       decodedMsg = THourSec;
       stopanim = 1;
-      wait = 500;
       break;
     case 3:   // show "day, hh:mm", scrolling
       decodedMsg = TDate;
       stopanim = 0;
-      wait = 25;
+      wait = 40;
       break;
   } 
   //Serial.print("---- MESSAGE : ");
@@ -143,11 +164,18 @@ void process(String cmd){
   server.send(200, "text/html", formCmd);
   Serial.println((String)"COMMAND : "+cmd);
   
-  if (cmd == "restart") {                         // restart th ESP
+  if (cmd == "restart") {                         // restart the ESP (will erase stored variables such as gmt offset)
     server.send(205, "text/html", formCmd);
     delay(2000);
     cmd = "";
     ESP.restart();
+    exit(0);
+  }
+  if (cmd == "reset") {                         // reset the ESP
+    server.send(205, "text/html", formCmd);
+    delay(2000);
+    cmd = "";
+    ESP.reset();
     exit(0);
   }
   if (cmd == "checkboot") {                       // check last boot (for debug)
@@ -165,11 +193,35 @@ void process(String cmd){
   if (cmd == "forcentp") {                        // forces ntp client update then displays time automatically
     cmd = "";
     timeClient.forceUpdate();
+    timeClient.setTimeOffset(ntp_offset);
     ShowTime(displayMode);
   }
    
   //delay(3000);  // display http message for 3s
   
+}
+
+void CheckNtpOffset(int valNtp){
+  int temp=0;
+  ntp_offset = gmt_h*3600;
+  if (valNtp != gmt_h) {
+    Serial.println((String)" Used GMT OFFSET (before) : "+gmt_h);
+    temp = eeGetInt(0);  // read from eeprom (check)
+    Serial.println((String)" Stored GMT OFFSET (before) : "+temp);
+    if (valNtp >= -23 and valNtp <= 23){    // not incoherent value, write
+      gmt_h = valNtp;
+      eeWriteInt(0, valNtp);   // store default value
+      
+    }
+    ntp_offset = gmt_h*3600; 
+    Serial.println((String)"Changing GMT OFFSET : "+valNtp);
+    timeClient.setTimeOffset(ntp_offset);
+    temp = eeGetInt(0);  // read from eeprom (check)
+    Serial.println((String)"Stored GMT OFFSET Value : "+temp);
+  } else {
+    Serial.println((String)"Not Changing GMT OFFSET : "+gmt_h+" : SAME AS Stored");
+    timeClient.setTimeOffset(ntp_offset);
+  }
 }
 
 void handle_msg() {
@@ -183,6 +235,7 @@ void handle_msg() {
   String dispMode = server.arg("displaymode");
   String redir = server.arg("redir");
   String spd = server.arg("speed");
+  String ntpoff = server.arg("ntpoffset");
 
   if(redir == "1") {  // do nothing else than display server page.
     server.send(200, "text/html", form);    // Send same page so they can send another msg
@@ -198,6 +251,9 @@ void handle_msg() {
   if (level != "") {
     intensity = level.toInt();
     Serial.println((String)' Changing intensity ... '+intensity);
+  }
+  if (ntpoff != "") {
+    CheckNtpOffset( ntpoff.toInt() );
   }
   if (cmd != "") {
     showTime=0; // disable display of time / date
@@ -281,7 +337,18 @@ void checkStart() {
 }
 
 void setup(void) {
+  Serial.begin(115200);                           // full speed to monitor
+  gmt_h = eeGetInt(0);  // read eeprom
+  //delay(10000); // debug
+  Serial.println((String)" GMT OFFSET : "+gmt_h);
+  if (gmt_h < -23 or gmt_h > 23){ // no value or incoherent value stored, rewrite
+    Serial.println("gmt value error, rewiriting default ...");
+    eeWriteInt(0, 2);   // store default value
+    gmt_h = 2;
+  }
   
+  ntp_offset = gmt_h*3600; // In seconds
+  Serial.println((String)"NTP OFFSET : "+ntp_offset+" s");
   matrix.setIntensity(intensity); // Use a value between 0 and 15 for brightness
   
   // Adjust to your own needs
@@ -315,7 +382,6 @@ void setup(void) {
   matrix.setRotation(12, 1);
 
   //ESP.wdtDisable();                               // used to debug, disable wachdog timer, 
-  Serial.begin(115200);                           // full speed to monitor
                                  
   WiFi.begin(SSID, PASS);                         // Connect to WiFi network
   while (WiFi.status() != WL_CONNECTED) {         // Wait for connection
@@ -345,7 +411,8 @@ void setup(void) {
 
   //init and get the time
   timeClient.begin();
-  timeClient.setUpdateInterval(NTP_OFFSET);
+  timeClient.setUpdateInterval(NTP_INTERVAL);
+  timeClient.setTimeOffset(ntp_offset);
   timeClient.update();
 }
 
@@ -384,6 +451,7 @@ void loop(void) {
         if (refresh==1) {
           i=0;
           matrix.setIntensity(intensity);
+          if (stopanim == 1) break;
         }
         refresh=0;
         int letter = i / width;
