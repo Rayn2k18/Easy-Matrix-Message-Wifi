@@ -9,8 +9,9 @@ Changed :
 - default speed for rolling text (too slow ^^, in code : "int wait = 80;")
 
 Added : 
-- control of animation (stopanim ; 0 by default, 1 )
-	-> http://ESP-IP/msg?stopanim=1&msg=message 
+- AP mode (when no wifi access found)
+- control of animation (anim ; 1 by default, 0: still text, 1: scrolling text, 2: to do ... )
+	-> http://ESP-IP/msg?anim=1&msg=message 
 - control of intensity (level ; 8 by default, [0-15])
 	-> http://ESP-IP/msg?level=0
 - control of scrolling speed (speed ; 250 by default, [0-x])
@@ -24,6 +25,8 @@ Added :
 		-> http://ESP-IP/msg?cmd=restart
 	- forcentp : forces ntp client update
 		-> http://ESP-IP/msg?cmd=forcentp
+	- off : turn off display
+	- resetwifi : reset wifi connexion info and restarts
 - list of parameters on the ESP html page (http://ESP-IP/)
 - parameter "ntpofset" to change via url gmt offset (usefull for DST), this value is stored to eeprom
 	-> http://ESP-IP/msg?ntpoffset=4 (to set time to GMT+4) 

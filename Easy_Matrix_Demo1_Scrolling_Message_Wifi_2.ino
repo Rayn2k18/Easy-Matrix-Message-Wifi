@@ -1,22 +1,26 @@
 /*
 Project: Wifi controlled LED matrix display
 NodeMCU pins    -> EasyMatrix pins
+     VU -(+5V)  -> Vcc
+          GND   -> GND
 MOSI-D7-GPIO13  -> DIN
 CLK-D5-GPIO14   -> Clk
-GPIO15-D3        -> LOAD
+CS-D8-GPIO15    -> LOAD / CS
 
+Reset Button (if needed) : 
+      Gnd
+      Rst
 */
 #include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
+#include <DNSServer.h>            //Local DNS Server used for redirecting all requests to the configuration portal
+#include <ESP8266WebServer.h>     //Local WebServer used to serve the configuration portal and control of led matrix
+#include <WiFiManager.h>  
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Max72xxPanel.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <EEPROM.h>
-
-#define SSID "your_ssid"                      // insert your SSID
-#define PASS "*********"                    // insert your password
 
 // ------------- NTP DATE / TIME -----------------------
 
@@ -30,7 +34,7 @@ const char* ntpServer = "fr.pool.ntp.org";
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 char daysOfTheWeekFR[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
 
-
+WiFiManager wifiManager;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, ntpServer, ntp_offset, NTP_INTERVAL);
 
@@ -45,27 +49,31 @@ String form =
   "</center><br><br>"
   "Available GET parameters : <br>"
   " <ul><li>msg : (string) message to display</li>"
-  "     <li>stopanim : (1|0) still or rolling message</li>"
+  "     <li>anim : (0-2) 0: still, 1: rolling message, 2: back and forth (to do)</li>"
   "     <li>level : (0-15) intensity of leds</li>"
   "     <li>displaymode : (1-3) 1= 'HH:mm' still mode, 2= 'HH:mm:ss' still mode, 3= 'day, HH:mm' rolling mode</li>"
   "     <li>cmd : (string) execute command</li>"
-  "         <ul><li>restart : restarts the ESP (equiv to reset button, usefull when display is not complete or blank after boot up)</li>"
-  "         <li>showtime : displays automatically NTP updated time on screen</li>"
-  "         <li>forcentp : forces NTP client update</li></ul>"
-  "     <li>ntpoffset : sets ntpoffset (in hour) and store it to eeprom (ex: GMT+2 -> ntpoffset=2 / GMT-10 -> ntpoffset=-10)"
+  "         <ul><li><a href='/msg?cmd=restart'>restart</a> : restarts the ESP (equiv to reset button, usefull when display is not complete or blank after boot up)</li>"
+  "         <li><a href='/msg?cmd=showtime'>showtime</a> : displays automatically NTP updated time on screen</li>"
+  "         <li><a href='/msg?cmd=forcentp'>forcentp</a> : forces NTP client update</li></ul>"
+  "         <li><a href='/msg?cmd=resetwifi'>resetwifi</a> : reset wifi connexion info and restarts</li>"
+  "         <li><a href='/msg?ntpoffset=2'>ntpoffset</a> : sets ntpoffset (in hour) and store it to eeprom (ex: GMT+2 -> ntpoffset=2 / GMT-10 -> ntpoffset=-10)"
+  "         <li><a href='/msg?cmd=off'>off</a> : turn off display</li></ul>"
   "  </ul>";
   
 
 ESP8266WebServer server(80);                             // HTTP server will listen at port 80
 long period;
 int offset=1,refresh=0;
+int *pRefresh = &refresh;
 
 int pinCS = 15; // Attach CS to this pin, DIN to MOSI and CLK to SCK (cf http://arduino.cc/en/Reference/SPI )
 int numberOfHorizontalDisplays = 12;
 int numberOfVerticalDisplays = 1;
 String decodedMsg;
 String cmd;
-int stopanim = 0;
+int anim = 1;
+int *pAnim = &anim;
 int intensity = 2;
 Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
 int wait = 80; // In milliseconds
@@ -129,15 +137,15 @@ void ShowTime(int displayMode)  // displays time
   switch (displayMode) {
     case 1:   // show "hh:mm", center, still
       decodedMsg = THour;
-      stopanim = 1;
+      anim = 0;
       break;
     case 2:   // show "hh:mm:ss", center, still
       decodedMsg = THourSec;
-      stopanim = 1;
+      anim = 0;
       break;
     case 3:   // show "day, hh:mm", scrolling
       decodedMsg = TDate;
-      stopanim = 0;
+      anim = 1;
       wait = 40;
       break;
   } 
@@ -196,6 +204,24 @@ void process(String cmd){
     timeClient.setTimeOffset(ntp_offset);
     ShowTime(displayMode);
   }
+  if (cmd == "resetwifi") {                         // reset saved wifi settings and restarts
+    server.send(205, "text/html", formCmd);
+    delay(2000);
+    cmd = "";
+    wifiManager.resetSettings();
+    delay(2000);
+    ESP.reset();
+    exit(0);
+  }
+  if (cmd == "off") {                         // reset saved wifi settings and restarts
+    decodedMsg = "";
+    intensity = 0;
+    showTime = 0; 
+    anim = 1;
+    cmd = "";
+  }
+  
+  
    
   //delay(3000);  // display http message for 3s
   
@@ -231,7 +257,7 @@ void handle_msg() {
   String msg = server.arg("msg");
   String cmd = server.arg("cmd");
   String level = server.arg("level");
-  String str_anim = server.arg("stopanim");
+  String str_anim = server.arg("anim");
   String dispMode = server.arg("displaymode");
   String redir = server.arg("redir");
   String spd = server.arg("speed");
@@ -263,8 +289,10 @@ void handle_msg() {
     return; // if cmd is made, do not process msg as usual
   }
   
-  stopanim = 0;
-  if (str_anim == "1" or str_anim == "on") stopanim = 1;
+  if (str_anim != "") {
+    *pAnim = str_anim.toInt();
+    Serial.println((String)"Changing animation ... "+ *pAnim);
+  }
 
   wait = 80;
   if (spd != "") {
@@ -278,7 +306,7 @@ void handle_msg() {
     Serial.println((String)"new message ... "+msg);
   }
   server.send(200, "text/html", form);    // Send same page so they can send another msg
-  refresh=1;
+  *pRefresh=1;
   Serial.println(msg);
   decodedMsg = msg;
   // Restore special characters that are misformed to %char by the client browser
@@ -336,6 +364,65 @@ void checkStart() {
   Serial.println(boot);
 }
 
+void configModeCallback (WiFiManager *myWiFiManager) {
+  Serial.println("Entered config mode");
+  Serial.println(WiFi.softAPIP());
+  //if you used auto generated SSID, print it
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+  decodedMsg = (String) "AP Mode, SSID : "+ myWiFiManager->getConfigPortalSSID()+" @IP : 192.168.4.1 ";
+  Scrolling(decodedMsg);
+}
+
+void Scrolling(String decodedMsg) {
+  for ( int i = 0 ; i < width * decodedMsg.length() + matrix.width() - 1 - spacer; i++ ) {    // boucle scrolling
+    server.handleClient();
+    if (*pRefresh==1) {
+      //i=0;
+      //matrix.setIntensity(intensity);
+      *pRefresh=0;
+      break;
+    }
+    
+    if (*pAnim == 0) break;
+    int letter = i / width;
+    int x = (matrix.width() - 1) - i % width;
+    int y = (matrix.height() - 8) / 2; // center the text vertically
+    
+    while ( x + width - spacer >= 0 && letter >= 0 ) {
+      if ( letter < decodedMsg.length() ) {
+        matrix.drawChar(x, y, decodedMsg[letter], HIGH, LOW, 1);
+      }
+    
+      letter--;
+      x -= width;
+    }
+    matrix.write(); // Send bitmap to display
+    delay(wait);
+  }
+}
+
+void BackForth(String decodedMsg) {
+  decodedMsg = decodedMsg+"  ";
+  Scrolling(decodedMsg);
+  // todo : send text in the opposite direction
+}
+
+void Still(String decodedMsg) {
+   server.handleClient();                        // checks for incoming messages
+   for(int j=0; j < decodedMsg.length(); j++ )
+    {
+        int nb_space = ( (matrix.width()- (width*decodedMsg.length()) )/2 );
+        if (nb_space < 0) nb_space =0;
+        //Serial.println(nb_space);
+        int x= (j * width) + nb_space;  // step horizontal by width of character and spacer
+        int y = (matrix.height() - 8) / 2; // center the text vertically
+    
+        matrix.drawChar(x, y, decodedMsg[ j ], HIGH, LOW, 1);   // draw a character from 'tape'
+    }
+    matrix.write(); // Send bitmap to display
+    delay(wait);
+}
+
 void setup(void) {
   Serial.begin(115200);                           // full speed to monitor
   gmt_h = eeGetInt(0);  // read eeprom
@@ -350,6 +437,9 @@ void setup(void) {
   ntp_offset = gmt_h*3600; // In seconds
   Serial.println((String)"NTP OFFSET : "+ntp_offset+" s");
   matrix.setIntensity(intensity); // Use a value between 0 and 15 for brightness
+
+  Serial.println((String)"width : "+width+", matrix width : "+matrix.width()+", spacer : "+spacer+" total :"+(width + matrix.width() - 1 - spacer));
+  Serial.println((String)"matrix height : "+matrix.height());
   
   // Adjust to your own needs
   //  matrix.setPosition(0, 1, 0); // The first display is at <0, 0>
@@ -380,30 +470,27 @@ void setup(void) {
   matrix.setRotation(10, 1);
   matrix.setRotation(11, 1);
   matrix.setRotation(12, 1);
-
-  //ESP.wdtDisable();                               // used to debug, disable wachdog timer, 
                                  
-  WiFi.begin(SSID, PASS);                         // Connect to WiFi network
-  while (WiFi.status() != WL_CONNECTED) {         // Wait for connection
-    delay(500);
-    Serial.print(".");
-  }
+  // ----- WIFI CONNEXION --------------------
+  wifiManager.setAPCallback(configModeCallback);
+  wifiManager.setConfigPortalTimeout(120); // shows wifi config page for 2min then starts normally on wifi connect fail (or not defined wifi connexion)
+  wifiManager.autoConnect();
+  
+  Serial.println("wifi connexion : OK !");
+  // ----------- END WIFI Section ------------
   // Set up the endpoints for HTTP server,  Endpoints can be written as inline functions:
   server.on("/", []() {
     server.send(200, "text/html", form);
   });
   server.on("/msg", handle_msg);                  // And as regular external functions:
   server.begin();                                 // Start the server 
-
-
-  Serial.print("SSID : ");                        // prints SSID in monitor
-  Serial.println(SSID);                           // to monitor             
+          
  
   char result[16];
   sprintf(result, "%3d.%3d.%1d.%3d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
   Serial.println();
   Serial.println(result);
-  decodedMsg = (String)result+" ";
+  if (WiFi.status() == WL_CONNECTED) decodedMsg = (String)result+" ";
   Serial.println("WebServer ready!   ");
 
   Serial.println(WiFi.localIP());                 // Serial monitor prints localIP
@@ -423,57 +510,24 @@ void loop(void) {
       timeClient.update();                      // update from ntp server OR locally (using NTP_INTERVAL)
       ShowTime(displayMode);
   }
-  //Serial.print(" Display : ");
-  //Serial.println(decodedMsg);
-  
     
     matrix.setIntensity(intensity);
     matrix.fillScreen(LOW);
 
-    if (stopanim == 1) {
-       server.handleClient();                        // checks for incoming messages
-       for(int j=0; j < decodedMsg.length(); j++ )
-        {
-            int nb_space = ( (matrix.width()- (width*decodedMsg.length()) )/2 );
-            if (nb_space < 0) nb_space =0;
-            //Serial.println(nb_space);
-            int x= (j * width) + nb_space;  // step horizontal by width of character and spacer
-            int y = (matrix.height() - 8) / 2; // center the text vertically
-        
-            matrix.drawChar(x, y, decodedMsg[ j ], HIGH, LOW, 1);   // draw a character from 'tape'
-        }
-        matrix.write(); // Send bitmap to display
-        delay(wait);
-
-    } else {
-      for ( int i = 0 ; i < width * decodedMsg.length() + matrix.width() - 1 - spacer; i++ ) {    // boucle scrolling
-        server.handleClient();
-        if (refresh==1) {
-          i=0;
-          matrix.setIntensity(intensity);
-          if (stopanim == 1) break;
-        }
-        refresh=0;
-        int letter = i / width;
-        int x = (matrix.width() - 1) - i % width;
-        int y = (matrix.height() - 8) / 2; // center the text vertically
-     
-        while ( x + width - spacer >= 0 && letter >= 0 ) {
-          if ( letter < decodedMsg.length() ) {
-            matrix.drawChar(x, y, decodedMsg[letter], HIGH, LOW, 1);
-          }
-    
-          letter--;
-          x -= width;
-        }
-        matrix.write(); // Send bitmap to display
-        delay(wait);
-      }
+    switch (*pAnim) {
+      case 0:
+        Still(decodedMsg);
+        break;
+      case 1:
+        Scrolling(decodedMsg);
+        break;
+      default:
+        BackForth(decodedMsg);
+        break;
     }
+ 
     
   if (showTime == 1) {
-    //Serial.print("delai : ");
-    //Serial.println(1000-wait);
      delay(1000-wait);
   }
   if(IPRoll < 5)IPRoll++;
