@@ -385,8 +385,21 @@ void handle_msg() {
     Serial.println((String)"new message ... "+msg);
   }
   Serial.println((String) "BEFORE : "+msg);
+  Serial.print("ASCII : ");
   decodedMsg = msg;
+  String temp = "";
+  for( int c=0; c<decodedMsg.length(); c++) {
+    if ((int)decodedMsg[c] != 194) {  // html code %C2 (= 194): useless and causes display bug
+      temp = (String)temp+decodedMsg[c];
+    }
+    Serial.print((int)decodedMsg[c]);
+    Serial.print(' ');
+  }
+  decodedMsg = temp;
+  Serial.println("[end]");
+  
   // Restore special characters that are misformed to %char by the client browser     
+  decodedMsg.replace("%C2", ""); 
   decodedMsg.replace("%21", "!");  
   decodedMsg.replace("%22", "");  
   decodedMsg.replace("%23", "#");
@@ -407,6 +420,7 @@ void handle_msg() {
   decodedMsg.replace("%3E", ">");
   decodedMsg.replace("%3F", "?");  
   decodedMsg.replace("%40", "@"); 
+  decodedMsg.replace("%B0", "°"); 
 // conversion from unicode (html side) to CP247 (matrix side)
   decodedMsg.replace((char)176, (char) 247);  // °
   decodedMsg.replace((char)231, (char) 135);  // ç
@@ -432,8 +446,8 @@ void handle_msg() {
   Serial.println((String) "AFTER : "+decodedMsg);                   // print original string to monitor
   Serial.print("ASCII : "); 
   for( int c=0; c<decodedMsg.length(); c++) {
-    Serial.print((int)decodedMsg[c]);
-    Serial.print(' ');
+      Serial.print((int)decodedMsg[c]);
+      Serial.print(' ');
   }
   Serial.println("[end]"); 
  
