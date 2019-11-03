@@ -27,7 +27,12 @@ Added :
 		-> http://ESP-IP/msg?cmd=forcentp
 	- off : turn off display
 	- resetwifi : reset wifi connexion info and restarts
+	- flash : flashes screen 4x (at limited intensity due to probable tension drop)
 - list of parameters on the ESP html page (http://ESP-IP/)
 - parameter "ntpofset" to change via url gmt offset (usefull for DST), this value is stored to eeprom
 	-> http://ESP-IP/msg?ntpoffset=4 (to set time to GMT+4) 
 	-> http://ESP-IP/msg?ntpoffset=-6 (to set time to GMT-6) 
+
+Fixed : 
+- letter display error (pb of encoding : unicode on the html side / CP437 on the matrix side)
+	-> now displays correctly most accents, °, ², ç

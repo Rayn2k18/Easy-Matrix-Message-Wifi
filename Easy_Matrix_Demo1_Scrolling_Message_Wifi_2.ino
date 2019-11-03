@@ -21,6 +21,8 @@ Reset Button (if needed) :
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <EEPROM.h>
+//#include "Fonts\Org_01.h"
+#include "font.h"
 
 // ------------- NTP DATE / TIME -----------------------
 
@@ -37,6 +39,33 @@ char daysOfTheWeekFR[7][12] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi"
 WiFiManager wifiManager;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, ntpServer, ntp_offset, NTP_INTERVAL);
+
+ESP8266WebServer server(80);                             // HTTP server will listen at port 80
+long period;
+int offset=1,refresh=0;
+int *pRefresh = &refresh;
+
+int pinCS = 15; // Attach CS to this pin, DIN to MOSI and CLK to SCK (cf http://arduino.cc/en/Reference/SPI )
+int numberOfHorizontalDisplays = 12;
+int numberOfVerticalDisplays = 1;
+int max_fill = 15;
+String decodedMsg;
+String cmd;
+int anim = 1;
+int *pAnim = &anim;
+int intensity = 2;
+Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
+int wait = 80; // In milliseconds
+
+int showTime = 1;
+String THour;
+String THourSec;
+String TDate;
+int displayMode = 2;
+int IPRoll = 0;
+
+int spacer = 1;
+int width = 5 + spacer; // The font width is 5 pixels
 
 // ******************* String form to sent to the client-browser ************************************
 String form =
@@ -58,35 +87,11 @@ String form =
   "         <li><a href='/msg?cmd=forcentp'>forcentp</a> : forces NTP client update</li></ul>"
   "         <li><a href='/msg?cmd=resetwifi'>resetwifi</a> : reset wifi connexion info and restarts</li>"
   "         <li><a href='/msg?ntpoffset=2'>ntpoffset</a> : sets ntpoffset (in hour) and store it to eeprom (ex: GMT+2 -> ntpoffset=2 / GMT-10 -> ntpoffset=-10)"
-  "         <li><a href='/msg?cmd=off'>off</a> : turn off display</li></ul>"
+  "         <li><a href='/msg?cmd=off'>off</a> : turn off display</li>"
+  "         <li><a href='/msg?cmd=flash'>flash</a> : make the screen blink 2x</li></ul>"
   "  </ul>";
   
 
-ESP8266WebServer server(80);                             // HTTP server will listen at port 80
-long period;
-int offset=1,refresh=0;
-int *pRefresh = &refresh;
-
-int pinCS = 15; // Attach CS to this pin, DIN to MOSI and CLK to SCK (cf http://arduino.cc/en/Reference/SPI )
-int numberOfHorizontalDisplays = 12;
-int numberOfVerticalDisplays = 1;
-String decodedMsg;
-String cmd;
-int anim = 1;
-int *pAnim = &anim;
-int intensity = 2;
-Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
-int wait = 80; // In milliseconds
-
-int showTime = 1;
-String THour;
-String THourSec;
-String TDate;
-int displayMode = 2;
-int IPRoll = 0;
-
-int spacer = 1;
-int width = 5 + spacer; // The font width is 5 pixels
 
 void eeWriteInt(int pos, int val) {   // write to eeprom
     EEPROM.begin(512);
@@ -159,13 +164,13 @@ void process(String cmd){
   String formCmd =
           "<html>"
           "  <head>"
-          "    <meta http-equiv='refresh' content='3;url=/msg?redir=1' />"
+          "    <meta http-equiv='refresh' content='5;url=/msg?redir=1' />"
           "  </head>"
           "  <body>"
           "     <center>"
           "     <h1>ESP8266 Web Server</h1>"
           "     <span> Processing command "+cmd+"  ...</span><br>"
-          "     <h1>Redirecting in 3 seconds...</h1>"
+          "     <h1>Redirecting in 5 seconds...</h1>"
           "     </center>"
           "  </body>"
           "</html>";
@@ -217,7 +222,69 @@ void process(String cmd){
     decodedMsg = "";
     intensity = 0;
     showTime = 0; 
-    anim = 1;
+    anim = 0;
+    cmd = "";
+  }
+  if (cmd == "flash") {                         // flash screen 2x
+    int flick_delay = 100;    // can't go above (probably due to tension drop) else display corrupted or blank
+    matrix.setIntensity(4); // can't go above (probably due to tension drop) else display corrupted or blank
+
+    //matrix.fillScreen(HIGH); // doesn't work, so, we'll fill screen with a full ON char
+    int y = (matrix.height() - 8) / 2;
+    char filler = '#';  // full char
+    
+    for (int i=0; i<max_fill; i++) {
+      int x= (i * width);  
+      matrix.drawChar(x, y, filler, LOW, HIGH, 1);
+    }
+    matrix.write();
+    delay(flick_delay);
+    for (int i=0; i<max_fill; i++) {
+      int x= (i * width);  
+      matrix.drawChar(x, y, filler, HIGH, LOW, 1);
+    }
+    matrix.write();
+    delay(flick_delay);  
+    for (int i=0; i<max_fill; i++) {
+      int x= (i * width);  
+      matrix.drawChar(x, y, filler, LOW, HIGH, 1);
+    }
+    matrix.write();
+    delay(flick_delay);
+    for (int i=0; i<max_fill; i++) {
+      int x= (i * width);  
+      matrix.drawChar(x, y, filler, HIGH, LOW, 1);
+    }  
+    matrix.write(); 
+    delay(flick_delay);
+    for (int i=0; i<max_fill; i++) {
+      int x= (i * width);  
+      matrix.drawChar(x, y, filler, LOW, HIGH, 1);
+    }
+    matrix.write();
+    delay(flick_delay);
+    for (int i=0; i<max_fill; i++) {
+      int x= (i * width);  
+      matrix.drawChar(x, y, filler, HIGH, LOW, 1);
+    }
+    matrix.write();
+    delay(flick_delay);  
+    for (int i=0; i<max_fill; i++) {
+      int x= (i * width);  
+      matrix.drawChar(x, y, filler, LOW, HIGH, 1);
+    }
+    matrix.write();
+    delay(flick_delay);
+    for (int i=0; i<max_fill; i++) {
+      int x= (i * width);  
+      matrix.drawChar(x, y, filler, HIGH, LOW, 1);
+    }  
+    matrix.write(); 
+    delay(flick_delay);
+  
+    matrix.setIntensity(intensity);
+    wait=80;
+    showTime = 1;
     cmd = "";
   }
   
@@ -257,6 +324,7 @@ void handle_msg() {
   String msg = server.arg("msg");
   String cmd = server.arg("cmd");
   String level = server.arg("level");
+  String s_max = server.arg("max");
   String str_anim = server.arg("anim");
   String dispMode = server.arg("displaymode");
   String redir = server.arg("redir");
@@ -265,7 +333,7 @@ void handle_msg() {
 
   if(redir == "1") {  // do nothing else than display server page.
     server.send(200, "text/html", form);    // Send same page so they can send another msg
-    refresh=0;
+    *pRefresh=0;
     return;
   }
 
@@ -278,12 +346,21 @@ void handle_msg() {
     intensity = level.toInt();
     Serial.println((String)' Changing intensity ... '+intensity);
   }
+  if (s_max != "") {
+    max_fill = s_max.toInt();
+    Serial.println((String)' Changing max fill ... '+max_fill);
+  }
   if (ntpoff != "") {
     CheckNtpOffset( ntpoff.toInt() );
   }
   if (cmd != "") {
-    showTime=0; // disable display of time / date
     Serial.println((String)"new command ... "+cmd);
+    if (cmd == "flash") {
+      process(cmd);
+      *pRefresh=1;
+      return;
+    }
+    showTime=0; // disable display of time / date
     decodedMsg = cmd;
     process(cmd);
     return; // if cmd is made, do not process msg as usual
@@ -292,6 +369,8 @@ void handle_msg() {
   if (str_anim != "") {
     *pAnim = str_anim.toInt();
     Serial.println((String)"Changing animation ... "+ *pAnim);
+  } else {
+    *pAnim = 1;
   }
 
   wait = 80;
@@ -305,12 +384,9 @@ void handle_msg() {
     showTime=0; // disable display of time / date
     Serial.println((String)"new message ... "+msg);
   }
-  server.send(200, "text/html", form);    // Send same page so they can send another msg
-  *pRefresh=1;
-  Serial.println(msg);
+  Serial.println((String) "BEFORE : "+msg);
   decodedMsg = msg;
-  // Restore special characters that are misformed to %char by the client browser
-  decodedMsg.replace("+", " ");      
+  // Restore special characters that are misformed to %char by the client browser     
   decodedMsg.replace("%21", "!");  
   decodedMsg.replace("%22", "");  
   decodedMsg.replace("%23", "#");
@@ -331,14 +407,38 @@ void handle_msg() {
   decodedMsg.replace("%3E", ">");
   decodedMsg.replace("%3F", "?");  
   decodedMsg.replace("%40", "@"); 
-  decodedMsg.replace("%B0", "\"");  // °
-  decodedMsg.replace("%2E", ".");
-  decodedMsg.replace("%E7", "c");
-
+// conversion from unicode (html side) to CP247 (matrix side)
+  decodedMsg.replace((char)176, (char) 247);  // °
+  decodedMsg.replace((char)231, (char) 135);  // ç
+  decodedMsg.replace((char)233, (char) 130);  // é
+  decodedMsg.replace((char)232, (char) 138);  // è
+  decodedMsg.replace((char)235, (char) 138);  // ê
+  decodedMsg.replace((char)234, (char) 137);  // ë
+  decodedMsg.replace((char)224, (char) 133);  // à
   
-  //Serial.println(decodedMsg);                   // print original string to monitor
+  decodedMsg.replace((char)239, (char) 139);  // ï
+  decodedMsg.replace((char)238, (char) 140);  // î
+  decodedMsg.replace((char)246, (char) 148);  // ö
+  decodedMsg.replace((char)244, (char) 147);  // ô
+  decodedMsg.replace((char)252, (char) 129);  // ü
+  decodedMsg.replace((char)251, (char) 150);  // û
+  decodedMsg.replace((char)249, (char) 151);  // ù
+  
+  decodedMsg.replace((char)178, (char) 253);  // ²
+  decodedMsg.replace((char)189, (char) 171);  // ½
+  decodedMsg.replace((char)188, (char) 172);  // ¼
+  decodedMsg.replace((char)183, (char) 249);  // ·
+  
+  Serial.println((String) "AFTER : "+decodedMsg);                   // print original string to monitor
+  Serial.print("ASCII : "); 
+  for( int c=0; c<decodedMsg.length(); c++) {
+    Serial.print((int)decodedMsg[c]);
+    Serial.print(' ');
+  }
+  Serial.println("[end]"); 
  
- 
+   server.send(200, "text/html", (String)form+"<br><br>LAST MESSAGE :<br><pre>"+msg+"</pre><br><pre>"+decodedMsg+"</pre>");    // Send same page so they can send another msg
+  *pRefresh=1;
     
   //Serial.println(' ');                          // new line in monitor
 }
@@ -436,6 +536,7 @@ void setup(void) {
   
   ntp_offset = gmt_h*3600; // In seconds
   Serial.println((String)"NTP OFFSET : "+ntp_offset+" s");
+  //matrix.setFont(&Org_01); // doesn't work
   matrix.setIntensity(intensity); // Use a value between 0 and 15 for brightness
 
   Serial.println((String)"width : "+width+", matrix width : "+matrix.width()+", spacer : "+spacer+" total :"+(width + matrix.width() - 1 - spacer));
