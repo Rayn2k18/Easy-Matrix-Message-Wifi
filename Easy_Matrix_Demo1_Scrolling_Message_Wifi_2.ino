@@ -389,7 +389,7 @@ void handle_msg() {
   decodedMsg = msg;
   String temp = "";
   for( int c=0; c<decodedMsg.length(); c++) {
-    if ((int)decodedMsg[c] != 194) {  // html code %C2 (= 194): useless and causes display bug
+    if ((int)decodedMsg[c] != 194 and (int)decodedMsg[c] != 195) {  // html code %C2 (= 194) and %C3 (=195): useless and causes display bug
       temp = (String)temp+decodedMsg[c];
     }
     Serial.print((int)decodedMsg[c]);
@@ -438,10 +438,26 @@ void handle_msg() {
   decodedMsg.replace((char)251, (char) 150);  // û
   decodedMsg.replace((char)249, (char) 151);  // ù
   
-  decodedMsg.replace((char)178, (char) 253);  // ²
+  decodedMsg.replace((char)178, (char) 252);  // ²
   decodedMsg.replace((char)189, (char) 171);  // ½
   decodedMsg.replace((char)188, (char) 172);  // ¼
   decodedMsg.replace((char)183, (char) 249);  // ·
+  
+// fix for utf8 encoded GET value to data matrix
+  decodedMsg.replace((char)167, (char) 135);  // ç
+  decodedMsg.replace((char)169, (char) 130);  // é
+  decodedMsg.replace((char)168, (char) 138);  // è
+  decodedMsg.replace((char)170, (char) 138);  // ê
+  decodedMsg.replace((char)171, (char) 137);  // ë
+  decodedMsg.replace((char)160, (char) 133);  // à
+  
+  decodedMsg.replace((char)175, (char) 139);  // ï
+  decodedMsg.replace((char)174, (char) 140);  // î
+  decodedMsg.replace((char)182, (char) 148);  // ö
+  decodedMsg.replace((char)180, (char) 147);  // ô
+  decodedMsg.replace((char)188, (char) 129);  // ü
+  decodedMsg.replace((char)187, (char) 150);  // û
+  decodedMsg.replace((char)175, (char) 151);  // ù
   
   Serial.println((String) "AFTER : "+decodedMsg);                   // print original string to monitor
   Serial.print("ASCII : "); 
