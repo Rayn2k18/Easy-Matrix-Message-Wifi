@@ -21,6 +21,7 @@ Reset Button (if needed) :
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <EEPROM.h>
+#include <ArduinoMqttClient.h>
 //#include "Fonts\Org_01.h"
 #include "font.h"
 
@@ -40,6 +41,25 @@ WiFiManager wifiManager;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, ntpServer, ntp_offset, NTP_INTERVAL);
 
+// -----------------------------------------------------
+
+// MQTT Settings , to do later ... : store these values to eeprom + html page to modify
+#define MQTT_ON     // to disable mqtt, comment this line
+
+const char* mqtt_start = "emmw/display1/";
+const char* pubchan = "emmw/display1/out";
+String subchan = "emmw/display1/in";
+const char* broadchan = "emmw/broadcast";
+const char* mqtt_server = "192.168.200.254";
+const uint16_t mqtt_port = 1883;
+
+#ifdef MQTT_ON 
+WiFiClient wificlient;
+MqttClient mqttClient(wificlient);
+#endif
+
+// ----------------------------------------------------
+
 ESP8266WebServer server(80);                             // HTTP server will listen at port 80
 long period;
 int offset=1,refresh=0;
@@ -50,14 +70,17 @@ int numberOfHorizontalDisplays = 12;
 int numberOfVerticalDisplays = 1;
 int max_fill = 15;
 String decodedMsg;
+String *pdecodedMsg = &decodedMsg;
 String cmd;
 int anim = 1;
 int *pAnim = &anim;
 int intensity = 2;
 Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
 int wait = 80; // In milliseconds
+int *pWait = &wait;
 
 int showTime = 1;
+int *pshowTime = &showTime;
 String THour;
 String THourSec;
 String TDate;
@@ -161,6 +184,9 @@ void ShowTime(int displayMode)  // displays time
 }
 
 void process(String cmd){
+  #ifdef MQTT_ON 
+  mqtt_send((String)pubchan+"/cmd", cmd); // MQTT PUB
+  #endif
   String formCmd =
           "<html>"
           "  <head>"
@@ -318,6 +344,9 @@ void CheckNtpOffset(int valNtp){
 }
 
 void handle_msg() {
+  #ifdef MQTT_ON 
+    mqtt_send((String)pubchan+"/status", "new http request ..."); // MQTT PUB
+  #endif
   IPRoll = 5;    // http server reached, so @ip is known, no need to display it anymore                      
   matrix.fillScreen(LOW);
   // Display msg on Oled
@@ -383,90 +412,94 @@ void handle_msg() {
   if (msg != "") {
     showTime=0; // disable display of time / date
     Serial.println((String)"new message ... "+msg);
-  }
-  Serial.println((String) "BEFORE : "+msg);
-  Serial.print("ASCII : ");
-  decodedMsg = msg;
-  String temp = "";
-  for( int c=0; c<decodedMsg.length(); c++) {
-    if ((int)decodedMsg[c] != 194 and (int)decodedMsg[c] != 195) {  // html code %C2 (= 194) and %C3 (=195): useless and causes display bug
-      temp = (String)temp+decodedMsg[c];
-    }
-    Serial.print((int)decodedMsg[c]);
-    Serial.print(' ');
-  }
-  decodedMsg = temp;
-  Serial.println("[end]");
   
-  // Restore special characters that are misformed to %char by the client browser     
-  decodedMsg.replace("%C2", ""); 
-  decodedMsg.replace("%21", "!");  
-  decodedMsg.replace("%22", "");  
-  decodedMsg.replace("%23", "#");
-  decodedMsg.replace("%24", "$");
-  decodedMsg.replace("%25", "%");  
-  decodedMsg.replace("%26", "&");
-  decodedMsg.replace("%27", "'");  
-  decodedMsg.replace("%28", "(");
-  decodedMsg.replace("%29", ")");
-  decodedMsg.replace("%2A", "*");
-  decodedMsg.replace("%2B", "+");  
-  decodedMsg.replace("%2C", ",");  
-  decodedMsg.replace("%2F", "/");   
-  decodedMsg.replace("%3A", ":");    
-  decodedMsg.replace("%3B", ";");  
-  decodedMsg.replace("%3C", "<");  
-  decodedMsg.replace("%3D", "=");  
-  decodedMsg.replace("%3E", ">");
-  decodedMsg.replace("%3F", "?");  
-  decodedMsg.replace("%40", "@"); 
-  decodedMsg.replace("%B0", "°"); 
-// conversion from unicode (html side) to CP247 (matrix side)
-  decodedMsg.replace((char)176, (char) 247);  // °
-  decodedMsg.replace((char)231, (char) 135);  // ç
-  decodedMsg.replace((char)233, (char) 130);  // é
-  decodedMsg.replace((char)232, (char) 138);  // è
-  decodedMsg.replace((char)235, (char) 138);  // ê
-  decodedMsg.replace((char)234, (char) 137);  // ë
-  decodedMsg.replace((char)224, (char) 133);  // à
-  
-  decodedMsg.replace((char)239, (char) 139);  // ï
-  decodedMsg.replace((char)238, (char) 140);  // î
-  decodedMsg.replace((char)246, (char) 148);  // ö
-  decodedMsg.replace((char)244, (char) 147);  // ô
-  decodedMsg.replace((char)252, (char) 129);  // ü
-  decodedMsg.replace((char)251, (char) 150);  // û
-  decodedMsg.replace((char)249, (char) 151);  // ù
-  
-  decodedMsg.replace((char)178, (char) 252);  // ²
-  decodedMsg.replace((char)189, (char) 171);  // ½
-  decodedMsg.replace((char)188, (char) 172);  // ¼
-  decodedMsg.replace((char)183, (char) 249);  // ·
-  
-// fix for utf8 encoded GET value to data matrix
-  decodedMsg.replace((char)167, (char) 135);  // ç
-  decodedMsg.replace((char)169, (char) 130);  // é
-  decodedMsg.replace((char)168, (char) 138);  // è
-  decodedMsg.replace((char)170, (char) 138);  // ê
-  decodedMsg.replace((char)171, (char) 137);  // ë
-  decodedMsg.replace((char)160, (char) 133);  // à
-  
-  decodedMsg.replace((char)175, (char) 139);  // ï
-  decodedMsg.replace((char)174, (char) 140);  // î
-  decodedMsg.replace((char)182, (char) 148);  // ö
-  decodedMsg.replace((char)180, (char) 147);  // ô
-  decodedMsg.replace((char)188, (char) 129);  // ü
-  decodedMsg.replace((char)187, (char) 150);  // û
-  decodedMsg.replace((char)175, (char) 151);  // ù
-  
-  Serial.println((String) "AFTER : "+decodedMsg);                   // print original string to monitor
-  Serial.print("ASCII : "); 
-  for( int c=0; c<decodedMsg.length(); c++) {
+    Serial.println((String) "BEFORE : "+msg);
+    Serial.print("ASCII : ");
+    decodedMsg = msg;
+    String temp = "";
+    for( int c=0; c<decodedMsg.length(); c++) {
+      if ((int)decodedMsg[c] != 194 and (int)decodedMsg[c] != 195) {  // html code %C2 (= 194) and %C3 (=195): useless and causes display bug
+        temp = (String)temp+decodedMsg[c];
+      }
       Serial.print((int)decodedMsg[c]);
       Serial.print(' ');
+    }
+    decodedMsg = temp;
+    Serial.println("[end]");
+    
+    // Restore special characters that are misformed to %char by the client browser     
+    decodedMsg.replace("%C2", ""); 
+    decodedMsg.replace("%21", "!");  
+    decodedMsg.replace("%22", "");  
+    decodedMsg.replace("%23", "#");
+    decodedMsg.replace("%24", "$");
+    decodedMsg.replace("%25", "%");  
+    decodedMsg.replace("%26", "&");
+    decodedMsg.replace("%27", "'");  
+    decodedMsg.replace("%28", "(");
+    decodedMsg.replace("%29", ")");
+    decodedMsg.replace("%2A", "*");
+    decodedMsg.replace("%2B", "+");  
+    decodedMsg.replace("%2C", ",");  
+    decodedMsg.replace("%2F", "/");   
+    decodedMsg.replace("%3A", ":");    
+    decodedMsg.replace("%3B", ";");  
+    decodedMsg.replace("%3C", "<");  
+    decodedMsg.replace("%3D", "=");  
+    decodedMsg.replace("%3E", ">");
+    decodedMsg.replace("%3F", "?");  
+    decodedMsg.replace("%40", "@"); 
+    decodedMsg.replace("%B0", "°"); 
+  // conversion from unicode (html side) to CP247 (matrix side)
+    decodedMsg.replace((char)176, (char) 247);  // °
+    decodedMsg.replace((char)231, (char) 135);  // ç
+    decodedMsg.replace((char)233, (char) 130);  // é
+    decodedMsg.replace((char)232, (char) 138);  // è
+    decodedMsg.replace((char)235, (char) 138);  // ê
+    decodedMsg.replace((char)234, (char) 137);  // ë
+    decodedMsg.replace((char)224, (char) 133);  // à
+    
+    decodedMsg.replace((char)239, (char) 139);  // ï
+    decodedMsg.replace((char)238, (char) 140);  // î
+    decodedMsg.replace((char)246, (char) 148);  // ö
+    decodedMsg.replace((char)244, (char) 147);  // ô
+    decodedMsg.replace((char)252, (char) 129);  // ü
+    decodedMsg.replace((char)251, (char) 150);  // û
+    decodedMsg.replace((char)249, (char) 151);  // ù
+    
+    decodedMsg.replace((char)178, (char) 252);  // ²
+    decodedMsg.replace((char)189, (char) 171);  // ½
+    decodedMsg.replace((char)188, (char) 172);  // ¼
+    decodedMsg.replace((char)183, (char) 249);  // ·
+    
+  // fix for utf8 encoded GET value to data matrix
+    decodedMsg.replace((char)167, (char) 135);  // ç
+    decodedMsg.replace((char)169, (char) 130);  // é
+    decodedMsg.replace((char)168, (char) 138);  // è
+    decodedMsg.replace((char)170, (char) 138);  // ê
+    decodedMsg.replace((char)171, (char) 137);  // ë
+    decodedMsg.replace((char)160, (char) 133);  // à
+    
+    decodedMsg.replace((char)175, (char) 139);  // ï
+    decodedMsg.replace((char)174, (char) 140);  // î
+    decodedMsg.replace((char)182, (char) 148);  // ö
+    decodedMsg.replace((char)180, (char) 147);  // ô
+    decodedMsg.replace((char)188, (char) 129);  // ü
+    decodedMsg.replace((char)187, (char) 150);  // û
+    decodedMsg.replace((char)175, (char) 151);  // ù
+    
+    Serial.println((String) "AFTER : "+decodedMsg);                   // print original string to monitor
+    #ifdef MQTT_ON 
+      mqtt_send((String)pubchan+"/text", decodedMsg); // MQTT PUB
+    #endif
+    Serial.print("ASCII : "); 
+    for( int c=0; c<decodedMsg.length(); c++) {
+        Serial.print((int)decodedMsg[c]);
+        Serial.print(' ');
+    }
+    Serial.println("[end]"); 
+   
   }
-  Serial.println("[end]"); 
- 
    server.send(200, "text/html", (String)form+"<br><br>LAST MESSAGE :<br><pre>"+msg+"</pre><br><pre>"+decodedMsg+"</pre>");    // Send same page so they can send another msg
   *pRefresh=1;
     
@@ -506,6 +539,9 @@ void configModeCallback (WiFiManager *myWiFiManager) {
 void Scrolling(String decodedMsg) {
   for ( int i = 0 ; i < width * decodedMsg.length() + matrix.width() - 1 - spacer; i++ ) {    // boucle scrolling
     server.handleClient();
+    #ifdef MQTT_ON 
+      mqttClient.poll();
+    #endif
     if (*pRefresh==1) {
       //i=0;
       //matrix.setIntensity(intensity);
@@ -539,6 +575,9 @@ void BackForth(String decodedMsg) {
 
 void Still(String decodedMsg) {
    server.handleClient();                        // checks for incoming messages
+   #ifdef MQTT_ON 
+      mqttClient.poll();
+   #endif
    for(int j=0; j < decodedMsg.length(); j++ )
     {
         int nb_space = ( (matrix.width()- (width*decodedMsg.length()) )/2 );
@@ -632,10 +671,43 @@ void setup(void) {
   timeClient.setUpdateInterval(NTP_INTERVAL);
   timeClient.setTimeOffset(ntp_offset);
   timeClient.update();
+  
+  // MQTT ----------------------------------------------------
+  #ifdef MQTT_ON 
+    Serial.print("Attempting to connect to the MQTT broker: ");
+    Serial.println(mqtt_server);
+
+    if (!mqttClient.connect(mqtt_server, mqtt_port)) {
+      Serial.print("MQTT connection failed! Error code = ");
+      Serial.println(mqttClient.connectError());
+
+      while (1);
+    }
+
+    Serial.println("You're connected to the MQTT broker!");
+    Serial.println();
+    
+     // set the message receive callback
+    mqttClient.onMessage(mqtt_callback);
+
+    Serial.print("Subscribing to topic & subtopics : ");
+    Serial.println(subchan);
+    Serial.println();
+
+    // subscribe to a topic
+    mqttClient.subscribe(subchan+"/text");
+    mqttClient.subscribe(subchan+"/cmd");
+    mqttClient.subscribe(subchan+"/speed");
+    mqttClient.subscribe(subchan+"/level");
+    mqttClient.subscribe(subchan+"/anim");
+    mqttClient.subscribe(broadchan);
+  #endif
+ //--------------------------------------------------------
 }
 
 
 void loop(void) {
+  
   if (IPRoll < 5) Serial.println((String)"displaying @IP "+decodedMsg+", nb Roll : "+IPRoll);
   if (showTime == 1 and IPRoll > 4) {          // displays time automatically ONLY if uptime > 10s (display @IP before)
       timeClient.update();                      // update from ntp server OR locally (using NTP_INTERVAL)
@@ -663,3 +735,118 @@ void loop(void) {
   }
   if(IPRoll < 5)IPRoll++;
 }
+
+
+#ifdef MQTT_ON 
+ // MQTT Functions ------------------------------
+void mqtt_send(String topic, String message) {
+    Serial.print("Sending message to topic: ");
+    Serial.println(topic);
+    Serial.print(message);
+    Serial.println();
+
+    // send message, the Print interface can be used to set the message contents
+    mqttClient.beginMessage(topic);
+    mqttClient.print(message);
+    mqttClient.endMessage();
+
+    Serial.println();
+
+}
+
+void mqtt_callback(int messageSize) {
+  char letter;  
+  
+  // we received a message, print out the topic and contents
+  Serial.print("Received a message with topic '");
+  Serial.print(mqttClient.messageTopic());
+  String topic = mqttClient.messageTopic();
+  Serial.print("', length ");
+  Serial.print(messageSize);
+  Serial.println(" bytes:");
+  String value_mqtt;
+
+  // use the Stream interface to print the contents
+  String receivedMsg = "";
+  while (mqttClient.available()) {
+    value_mqtt = (char)mqttClient.read();
+    //Serial.print(value_mqtt);
+    receivedMsg = receivedMsg+value_mqtt;
+  }
+  Serial.println();
+  Serial.print("msg : ");
+  Serial.println(receivedMsg);
+  
+  ProcessMqtt(topic, receivedMsg);
+}
+
+void ProcessMqtt(String topic, String message) {
+  
+  topic.replace(mqtt_start, "");
+  if (topic == "text" or topic == "emmw/broadcast") {
+      matrix.fillScreen(LOW);
+      *pshowTime=0; // disable display of time / date
+      *pdecodedMsg = message;
+      Serial.println((String)"new message ... "+message);
+      mqtt_send((String)pubchan+"/text", message); // MQTT PUB
+  } else if (topic == "cmd") {
+      if (message == "help") {
+        String help = 
+            "available commands (topic 'cmd'): \n"
+            " - restart / reset\n"
+            " - showtime : display current time (auto update + ntp)\n"
+            " - forcentp : forces ntp update\n"
+            " - resetwifi : reset saved wifi settings and restarts\n"
+            " - off\n"
+            " - flash : make the leds flash\n"
+            " available parameters (topic = parameter) : \n"
+            " - text : will display on screen any text given here\n"
+            " - cmd : performs commands (see above)\n"
+            " - speed [1-1000] : controls text speed\n"
+            " - level [1-15] : brightness\n"
+            " - anim [0-1] : 0 = Still text, 1 = Scrolling text\n";     
+            Serial.println(help);
+        String help_cmds = 
+            "available commands (topic 'cmd'): "
+            " - restart / reset"
+            " - showtime : display current time (auto update + ntp)"
+            " - forcentp : forces ntp update"
+            " - resetwifi : reset saved wifi settings and restarts"
+            " - off"
+            " - flash : make the leds flash";
+            
+        String help_param =
+            " available parameters (topic = parameter) : "
+            " - text : will display on screen any text given here"
+            " - cmd : performs commands (see above)"
+            " - speed [1-1000] : controls text speed"
+            " - level [1-15] : brightness"
+            " - anim [0-1] : 0 = Still text, 1 = Scrolling text";
+        mqtt_send((String)pubchan+"/help_cmds", help_cmds);  
+        mqtt_send((String)pubchan+"/help_param", help_param);  
+        
+      } else {
+        process(message);
+        Serial.println((String)"processing command ... "+message);
+      }
+  } else if (topic == "speed" and message.toInt() > 0) { 
+      *pWait = message.toInt();
+      if(*pWait > 1000) *pWait=1000;
+      Serial.println((String)"Changing speed ... "+wait);
+  } else if (topic == "level") {
+      if (message.toInt() > 15) {
+          matrix.setIntensity(15);
+          Serial.println((String)"Changing brightness ... max ");
+      } else if (message.toInt() > 0) {
+        matrix.setIntensity(message.toInt());
+        Serial.println((String)"Changing brightness ... "+message);
+      }
+  } else if (topic == "anim") {
+      *pAnim = message.toInt();
+      Serial.println((String)"Changing animation ... "+ *pAnim);
+  } else {
+    mqtt_send((String)pubchan+"/error", "error, invalid topic : "+topic+", type help in 'cmd' topic");    // MQTT PUB
+  }
+  //*pRefresh=1;
+}
+#endif
